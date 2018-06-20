@@ -1,0 +1,267 @@
+import numpy as np # linear algebra
+import pandas as pd # data processing, CSV file I/O (e.g. pd.read_csv)
+#numpy.random.seed(0)
+
+#Sample data output
+df=pd.read_csv("sign_mnist_train.csv")
+df.head()
+
+#Image Dimensions
+x=df.iloc[0,1:].values
+x=x.reshape(28,28)
+x.shape
+
+#Sample image output
+import matplotlib.pyplot as plt
+import matplotlib.image as mpimg
+imgplot = plt.imshow(x)
+
+#Generating array of images
+def create(df):      
+    import cv2
+    w = np.empty((0,28,28))
+    x=[df.iloc[i,1:].values.reshape(28,28) for i in range(df.shape[0])]
+    n = 0     #Progress var
+    for _ in x:
+        w = np.append(w, [_], axis=0)
+        n+= 1 #Progress update
+        if n % 1000 == 0:
+            print(n)
+    del cv2
+    print('!')
+    return w
+
+#Calling create()
+x = create(df)
+
+#Generating label var
+y=df.iloc[:,0]
+labels = pd.get_dummies(y).values
+
+#Splitting training-set into train and validate sets
+from sklearn.model_selection import train_test_split
+x = x.reshape(df.shape[0], 28, 28, 1)
+X_train, X_test, y_train, y_test = train_test_split(x, labels, test_size=0.20, random_state=42)
+
+# Importing the Keras libraries and packages
+from keras.models import Sequential
+from keras.layers import Conv2D
+from keras.layers import MaxPooling2D
+from keras.layers import Flatten
+from keras.layers import Dense  #, Dropout
+  
+    
+learning_rate=0.01
+# Initialising the CNN
+classifier = Sequential()
+ 
+# Step 1 - Convolution
+classifier.add(Conv2D(32, (3, 3), input_shape = (28, 28, 1), activation = 'relu'))
+  
+# Step 2 - Pooling
+classifier.add(MaxPooling2D(pool_size = (2, 2)))
+  
+# Adding a second convolutional layer
+classifier.add(Conv2D(64, (3, 3), activation = 'relu'))
+classifier.add(MaxPooling2D(pool_size = (2, 2)))
+    
+# Adding a third convolutional layer
+classifier.add(Conv2D(128, (3, 3), activation = 'relu'))
+classifier.add(MaxPooling2D(pool_size = (2, 2)))
+    
+# Step 3 - Flattening
+classifier.add(Flatten())
+   
+# Step 4 - Full connection
+classifier.add(Dense(units = 128, activation = 'relu'))
+#classifier.add(Dense(units = 256, activation = 'relu'))
+#classifier.add(Dense(units = 256, activation = 'relu'))
+#classifier.add(Dense(units = 512, activation = 'relu'))
+#classifier.add(Dense(units = 512, activation = 'relu'))
+classifier.add(Dense(units = 24, activation = 'softmax'))
+  
+# Compiling the CNN
+classifier.compile(optimizer = 'adam', loss = 'categorical_crossentropy', metrics = ['accuracy'])
+
+from keras.preprocessing.image import ImageDataGenerator
+import keras
+datagen = ImageDataGenerator(
+    featurewise_center=True,
+    featurewise_std_normalization=True,
+    rotation_range=20,
+    width_shift_range=0.2,
+    height_shift_range=0.2,
+    horizontal_flip=True)
+
+# compute quantities required for featurewise normalization
+# (std, mean, and principal components if ZCA whitening is applied)
+datagen.fit(X_train)
+
+callback = [keras.callbacks.EarlyStopping(monitor='val_loss', min_delta=0, patience=2, verbose=0, mode='auto')]
+
+
+# fits the model on batches with real-time data augmentation:
+classifier.fit_generator(datagen.flow(X_train, y_train, batch_size=35),
+                    steps_per_epoch=len(X_train)/32, epochs=15, validation_data=(X_test, y_test), verbose=1)
+
+#Generating test-set var
+df_test = pd.read_csv("sign_mnist_test.csv")
+x_final = create(df_test)
+x_final = x_final.reshape(df_test.shape[0], 28, 28, 1)
+y_final=df_test.iloc[:,0]
+y_final = pd.get_dummies(y_final).values
+
+#Test accuracy
+score, acc = classifier.evaluate(x_final, y_final,
+                            batch_size=32)
+print('Test score:', score)
+print('Test accuracy:', acc)
+
+
+
+#Hyper parameter tuning
+from keras.wrappers.scikit_learn import KerasClassifier
+from sklearn.model_selection import GridSearchCV
+
+def create_model(optimizer='adam', learn_rate=0.01, momentum=0, activation='softmax', neurons=2, init_mode='uniform', dropout_rate=0.0, weight_constraint=0):
+    # Initialising the CNN
+    classifier = Sequential()
+
+    # Step 1 - Convolution
+    classifier.add(Conv2D(32, (3, 3), input_shape = (28, 28, 1), activation = 'relu'))
+
+    # Step 2 - Pooling
+    classifier.add(MaxPooling2D(pool_size = (2, 2)))
+
+    # Adding a second convolutional layer
+    classifier.add(Conv2D(64, (3, 3), activation = 'relu'))
+    model.add(Dropout(dropout_rate))
+    classifier.add(MaxPooling2D(pool_size = (2, 2)))
+
+#    # Adding a third convolutional layer
+#    classifier.add(Conv2D(128, (3, 3), activation = 'relu'))
+#    classifier.add(MaxPooling2D(pool_size = (2, 2)))
+
+    # Step 3 - Flattening
+    classifier.add(Flatten())
+
+    # Step 4 - Full connection
+    classifier.add(Dense(units = neurons, kernel_initializer=init_mode, activation = 'relu',kernel_constraint=maxnorm(weight_constraint)))
+    #classifier.add(Dense(neurons,units = 512, kernel_initializer=init_mode, activation = 'relu'))
+    classifier.add(Dense(units = 24, activation = activation))
+
+    # Compiling the CNN
+    classifier.compile(optimizer = optimizer, loss = 'categorical_crossentropy', metrics = ['accuracy'])
+    return classifier
+
+#Tuning Batch and epochs
+# create model
+model = KerasClassifier(build_fn=create_model, epochs=15, batch_size=35, verbose=0)
+batch_size = [40, 32, 35]
+epochs=[25,15,20]
+# define the grid search parameters
+param_grid = dict(epochs=epochs,batch_size=batch_size)
+grid = GridSearchCV(estimator=model, param_grid=param_grid, n_jobs=1)
+grid_result = grid.fit(X_train, y_train)
+# summarize results
+print("Best: %f using %s" % (grid_result.best_score_, grid_result.best_params_))
+means = grid_result.cv_results_['mean_test_score']
+stds = grid_result.cv_results_['std_test_score']
+params = grid_result.cv_results_['params']
+for mean, stdev, param in zip(means, stds, params):
+    print("%f (%f) with: %r" % (mean, stdev, param))
+    
+#Tuning optimizers
+# create model
+model = KerasClassifier(build_fn=create_model, epochs=20, batch_size=30, verbose=0)
+# define the grid search parameters
+optimizers = ['SGD', 'RMSprop', 'Adagrad', 'Adadelta', 'Adam', 'Adamax', 'Nadam']
+param_grid = dict(optimizer=optimizers)
+grid = GridSearchCV(estimator=model, param_grid=param_grid, n_jobs=1)
+grid_result = grid.fit(X_train, y_train)
+# summarize results
+print("Best: %f using %s" % (grid_result.best_score_, grid_result.best_params_))
+means = grid_result.cv_results_['mean_test_score']
+stds = grid_result.cv_results_['std_test_score']
+params = grid_result.cv_results_['params']
+for mean, stdev, param in zip(means, stds, params):
+    print("%f (%f) with: %r" % (mean, stdev, param))
+    
+#Tuning learning rate and momemtum
+# create model
+model = KerasClassifier(build_fn=create_model, epochs=35, batch_size=15, verbose=0)
+# define the grid search parameters
+learn_rate = [0.001, 0.01, 0.1, 0.2, 0.3]
+momentum = [0.0, 0.2, 0.4, 0.6, 0.8, 0.9]
+param_grid = dict(learn_rate=learn_rate, momentum=momentum)
+grid = GridSearchCV(estimator=model, param_grid=param_grid, n_jobs=1)
+grid_result = grid.fit(X_train, y_train)
+# summarize results
+print("Best: %f using %s" % (grid_result.best_score_, grid_result.best_params_))
+means = grid_result.cv_results_['mean_test_score']
+stds = grid_result.cv_results_['std_test_score']
+params = grid_result.cv_results_['params']
+for mean, stdev, param in zip(means, stds, params):
+    print("%f (%f) with: %r" % (mean, stdev, param))
+    
+#Tuning network weight initialization
+# create model
+model = KerasClassifier(build_fn=create_model, epochs=100, batch_size=10, verbose=0)
+# define the grid search parameters
+init_mode = ['uniform', 'lecun_uniform', 'normal', 'zero', 'glorot_normal', 'glorot_uniform', 'he_normal', 'he_uniform']
+param_grid = dict(init_mode=init_mode)
+grid = GridSearchCV(estimator=model, param_grid=param_grid, n_jobs=1)
+grid_result = grid.fit(X_train, y_train)
+# summarize results
+print("Best: %f using %s" % (grid_result.best_score_, grid_result.best_params_))
+means = grid_result.cv_results_['mean_test_score']
+stds = grid_result.cv_results_['std_test_score']
+params = grid_result.cv_results_['params']
+for mean, stdev, param in zip(means, stds, params):
+    print("%f (%f) with: %r" % (mean, stdev, param))
+    
+#Tuning neural activation function
+model = KerasClassifier(build_fn=create_model, epochs=20, batch_size=32, verbose=0)
+activation = ['softmax', 'softplus', 'softsign', 'relu', 'tanh', 'sigmoid', 'hard_sigmoid', 'linear']
+param_grid = dict(activation=activation)
+grid = GridSearchCV(estimator=model, param_grid=param_grid, n_jobs=1)
+grid_result = grid.fit(X_tain, y_train)
+print("Best: %f using %s" % (grid_result.best_score_, grid_result.best_params_))
+means = grid_result.cv_results_['mean_test_score']
+stds = grid_result.cv_results_['std_test_score']
+params = grid_result.cv_results_['params']
+for mean, stdev, param in zip(means, stds, params):
+    print("%f (%f) with: %r" % (mean, stdev, param))
+    
+#Tuning dropout regularization
+# create model
+model = KerasClassifier(build_fn=create_model, epochs=100, batch_size=10, verbose=0)
+# define the grid search parameters
+weight_constraint = [1, 2, 3, 4, 5]
+dropout_rate = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+param_grid = dict(dropout_rate=dropout_rate, weight_constraint=weight_constraint)
+grid = GridSearchCV(estimator=model, param_grid=param_grid, n_jobs=1)
+grid_result = grid.fit(X_train, y_train)
+# summarize results
+print("Best: %f using %s" % (grid_result.best_score_, grid_result.best_params_))
+means = grid_result.cv_results_['mean_test_score']
+stds = grid_result.cv_results_['std_test_score']
+params = grid_result.cv_results_['params']
+for mean, stdev, param in zip(means, stds, params):
+    print("%f (%f) with: %r" % (mean, stdev, param))
+    
+#Tuning number of neurons in hidden layer
+# create model
+model = KerasClassifier(build_fn=create_model, epochs=100, batch_size=10, verbose=0)
+# define the grid search parameters
+neurons = [1, 5, 10, 15, 20, 25, 30]
+param_grid = dict(neurons=neurons)
+grid = GridSearchCV(estimator=model, param_grid=param_grid, n_jobs=1)
+grid_result = grid.fit(X_train, y_train)
+# summarize results
+print("Best: %f using %s" % (grid_result.best_score_, grid_result.best_params_))
+means = grid_result.cv_results_['mean_test_score']
+stds = grid_result.cv_results_['std_test_score']
+params = grid_result.cv_results_['params']
+for mean, stdev, param in zip(means, stds, params):
+    print("%f (%f) with: %r" % (mean, stdev, param))
